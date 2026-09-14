@@ -37,3 +37,7 @@ Thumbs.db
 # Rider/VSCode
 .vscode/
 *.swp
+
+# Local Postman workspace config
+.postman/
+postman/

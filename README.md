@@ -96,6 +96,21 @@ instead of just `ILogger`.
 **3. Ambiguous reference** — `{"message":"Delete the report task"}` (4 tasks contain "report") →
 `{"status":"ambiguous","action":"delete_task","candidates":[...4 tasks...]}`
 
+### Screenshots (Postman, hitting `POST /api/assistant`)
+
+**Create** — `{"message":"create a task called Finish API documentation"}` → `create_task`, task 1 created:
+
+![Create task via assistant](screenshots/Sample_Create.png)
+
+**Update** — `{"message":"mark task 1 as done"}` → `update_task`, task 1's `isDone` flips to `true`:
+
+![Update task via assistant](screenshots/Sample_edit.png)
+
+**Error case (Section 5 — reference to a task that doesn't exist)** — `{"message":"delete task 2"}` →
+`status: "not_found"`, handled without crashing:
+
+![Delete a non-existent task returns not_found](screenshots/Sample_error.png)
+
 Reproduce with curl:
 ```bash
 curl -X POST http://localhost:5299/api/assistant -H "Content-Type: application/json" \
