@@ -26,13 +26,11 @@ Chosen for the generous free tier and first-class tool calling with no SDK neede
 
 ## Architecture
 
-```
-Browser → AssistantController → AssistantOrchestrator → ITaskService → ITaskRepository (ADO.NET) → SQL Server
-                                        │
-                                        └──▶ IAiAssistantClient (GeminiAiClient) — only ever
-                                             returns a proposed function name + args. It has no
-                                             reference to the database layer at all.
-```
+![Architecture diagram](screenshots/Architecture.png)
+
+Teal is the execution spine — the only path that reaches `dbo.Tasks`. Amber is the AI branch:
+`AssistantOrchestrator` hands it a message and gets back a decision, nothing more —
+`GeminiAiClient` has no reference to the database layer at all.
 
 - `Data/` — `SqlTaskRepository`: 100% ADO.NET, every query parameterized.
 - `Services/` — `TaskService`: validation + title-resolution logic, used by both the plain
