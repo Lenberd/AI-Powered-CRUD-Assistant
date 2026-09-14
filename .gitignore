@@ -1,0 +1,39 @@
+# Build results
+bin/
+obj/
+out/
+
+# Visual Studio / Rider
+.vs/
+.idea/
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+
+# Local/dev-only settings and secrets
+appsettings.Local.json
+appsettings.Development.json
+appsettings.*.local.json
+*.env
+.env
+.env.*
+
+# Dev signing certs/keys
+*.pfx
+*.cer
+*.snk
+
+# Logs
+*.log
+app.out.log
+app.err.log
+logs/
+
+# OS junk
+Thumbs.db
+.DS_Store
+
+# Rider/VSCode
+.vscode/
+*.swp

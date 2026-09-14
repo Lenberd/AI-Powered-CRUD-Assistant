@@ -1,0 +1,25 @@
+﻿<Project Sdk="Microsoft.NET.Sdk.Web">
+
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <UserSecretsId>984027f2-6502-481b-ad0f-734770fd139b</UserSecretsId>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Data.SqlClient" Version="5.2.2" />
+  </ItemGroup>
+
+  <!--
+    Local dev machines with Windows Smart App Control enforced will refuse to load a freshly-built,
+    unsigned assembly. This signs the build output with a local dev-only code-signing certificate
+    (thumbprint below) if it's present in the current user's certificate store; it silently no-ops
+    otherwise, so this is a no-op on any machine that hasn't created that certificate.
+    See README.md "Smart App Control" section.
+  -->
+  <Target Name="SignOutputForSmartAppControl" AfterTargets="Build" Condition="'$(OS)' == 'Windows_NT'">
+    <Exec Command="powershell -NoProfile -ExecutionPolicy Bypass -Command &quot;$c = Get-Item Cert:\CurrentUser\My\35FE29B1A818AE543ED7E7ABD5900A94686A7CA0 -ErrorAction SilentlyContinue; if ($c) { Set-AuthenticodeSignature -FilePath '$(TargetPath)' -Certificate $c | Out-Null }&quot;" />
+  </Target>
+
+</Project>
