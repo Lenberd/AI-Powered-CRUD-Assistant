@@ -71,7 +71,7 @@ public class GeminiAiClient : IAiAssistantClient
         {
             var body = await response.Content.ReadAsStringAsync(ct);
             _logger.LogWarning("Gemini returned {Status}: {Body}", (int)response.StatusCode, body);
-            throw new AiUnavailableException($"The AI service returned an error ({(int)response.StatusCode}).");
+            throw new AiUnavailableException(DescribeStatusError((int)response.StatusCode));
         }
 
         GeminiGenerateContentResponse? parsed;
@@ -102,6 +102,28 @@ public class GeminiAiClient : IAiAssistantClient
             .FirstOrDefault(p => p.Text is not null)?.Text;
         return AiDecision.FromText(text);
     }
+
+    /// <summary>
+    /// Turns a raw HTTP status code from Gemini into a plain-English sentence, instead of surfacing
+    /// a bare number the end user (or a client app) would have to go look up.
+    /// </summary>
+    private static string DescribeStatusError(int statusCode) => statusCode switch
+    {
+        400 => "The AI service rejected the request as malformed (HTTP 400). This usually points to a bug in how the request was built rather than anything the user typed.",
+        401 => "The Gemini API key was rejected as invalid (HTTP 401). Check that Gemini:ApiKey is set correctly.",
+        403 => "The Gemini API key does not have permission to use this model (HTTP 403). Check the key's access in Google AI Studio.",
+        404 => "The configured Gemini model could not be found (HTTP 404). Check the Gemini:Model setting.",
+        408 => "The request to the AI service timed out on Google's side (HTTP 408). Please try again.",
+        429 => "The AI service's rate limit or free-tier quota has been reached (HTTP 429). Please wait a moment before trying again.",
+        499 => "The request to the AI service was cancelled before it finished (HTTP 499).",
+        500 => "The AI service had an internal error while processing the request (HTTP 500). This is on Google's side - please try again.",
+        502 => "The AI service's gateway returned a bad response (HTTP 502). Please try again in a moment.",
+        503 => "The AI service is temporarily overloaded and unavailable (HTTP 503). Please try again in a moment.",
+        504 => "The request to the AI service timed out waiting for a response (HTTP 504). Please try again.",
+        >= 500 => $"The AI service is having a server-side problem (HTTP {statusCode}). Please try again in a moment.",
+        >= 400 => $"The AI service rejected the request (HTTP {statusCode}). Please try again, and check the server logs if it keeps happening.",
+        _ => $"The AI service returned an unexpected status ({statusCode}).",
+    };
 
     private static string BuildSystemPrompt() => $"""
         You are the backend decision-maker for a Task Manager app. Today's date is {DateTime.Now:yyyy-MM-dd} ({DateTime.Now:dddd}).

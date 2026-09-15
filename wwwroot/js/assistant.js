@@ -132,9 +132,16 @@
         chatLog.classList.remove("hidden");
     }
 
+    function truncate(text, max) {
+        if (!text) return "";
+        return text.length > max ? text.slice(0, max - 1) + "…" : text;
+    }
+
     // Sidebar audit trail: every AI-proposed call this session, accepted or rejected - mirrors
     // what AssistantOrchestrator logs server-side (ILogger), but visible without tailing logs.
-    function logAudit(action, status, source) {
+    // `action` is null whenever no function call was ever decided (e.g. the AI call itself failed) -
+    // that is shown honestly as "(no function call)" rather than guessing a tool name.
+    function logAudit(action, status, detail, source) {
         const empty = auditLog.querySelector(".audit-empty");
         if (empty) empty.remove();
 
@@ -150,7 +157,7 @@
 
         const actionEl = document.createElement("div");
         actionEl.className = "audit-action";
-        actionEl.textContent = action || "reject_request";
+        actionEl.textContent = action || "(no function call)";
         body.appendChild(actionEl);
 
         const meta = document.createElement("div");
@@ -162,6 +169,15 @@
         meta.appendChild(time);
         meta.appendChild(statusSpan);
         body.appendChild(meta);
+
+        // The human-readable "what happened" line - e.g. the friendly Gemini error sentence, or
+        // the created/updated task summary - so this entry is legible on its own, not just a code.
+        if (detail) {
+            const detailEl = document.createElement("div");
+            detailEl.className = "audit-detail";
+            detailEl.textContent = truncate(detail, 160);
+            body.appendChild(detailEl);
+        }
 
         entry.appendChild(body);
         auditLog.prepend(entry);
@@ -196,13 +212,14 @@
         hideTyping();
 
         if (!data) {
+            const explanation = `No response for "${truncate(message, 60)}" - the request may have timed out or the server is unreachable.`;
             addBubble("assistant", "The assistant did not return a response. Please try again.", "error");
-            logAudit(null, "error");
+            logAudit(null, "error", explanation);
             return;
         }
 
         addBubble("assistant", data.result || (ok ? "Done." : "Something went wrong."), data.status);
-        logAudit(data.action, data.status);
+        logAudit(data.action, data.status, `"${truncate(message, 60)}" → ${data.result || "no result message"}`);
 
         if (data.status === "confirmation_required" && data.task) {
             setConfirm(data.task);
@@ -220,7 +237,7 @@
 
         if (!confirmed) {
             addBubble("assistant", "Cancelled - the task was not deleted.", "rejected");
-            logAudit("delete_task", "rejected", "user cancelled");
+            logAudit("delete_task", "rejected", `Delete of task ${id} was cancelled before it ran.`, "user cancelled");
             return;
         }
 
@@ -228,7 +245,7 @@
         const { data } = await postJson("/api/assistant", { message: "", confirmDeleteId: id });
         hideTyping();
         addBubble("assistant", data?.result || "Done.", data?.status);
-        logAudit(data?.action || "delete_task", data?.status || "success", "user confirmed");
+        logAudit(data?.action || "delete_task", data?.status || "success", data?.result, "user confirmed");
         loadTasks();
     }
 

@@ -31,7 +31,10 @@ public class AssistantController : ControllerBase
         }
         catch (AiUnavailableException ex)
         {
-            _logger.LogWarning(ex, "AI provider unavailable.");
+            // Audit entry for a call that never reached a decision - keep the user's own message
+            // alongside the reason, so this reads as "user asked X, AI call failed because Y"
+            // instead of a bare exception with no context.
+            _logger.LogWarning(ex, "AI call failed for message \"{Message}\": {Reason}", request.Message, ex.Message);
             return StatusCode(StatusCodes.Status503ServiceUnavailable, new AssistantResponse
             {
                 Status = "error",
@@ -42,7 +45,7 @@ public class AssistantController : ControllerBase
         {
             // Last-resort guard so a bad AI response or an unexpected downstream error never
             // crashes the endpoint - it always answers with a structured, explainable result.
-            _logger.LogError(ex, "Unhandled error while processing assistant request.");
+            _logger.LogError(ex, "Unhandled error while processing assistant request for message \"{Message}\".", request.Message);
             return StatusCode(StatusCodes.Status500InternalServerError, new AssistantResponse
             {
                 Status = "error",

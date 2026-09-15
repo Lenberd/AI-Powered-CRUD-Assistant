@@ -43,8 +43,12 @@ public class AssistantOrchestrator
         var history = _conversationStore.GetHistory(request.ConversationId);
         var decision = await _aiClient.DecideActionAsync(request.Message, history, ct);
 
-        // Bonus: audit log of every AI-proposed call, accepted or not.
-        _logger.LogInformation("AI proposed: {Function} args={Args}", decision.FunctionName ?? "(none - text reply)",
+        // Bonus: audit log of every AI-proposed call, accepted or not - keeps the user's own message
+        // next to the decision, so a reader can see "user asked X, AI proposed Y" in one line.
+        _logger.LogInformation(
+            "AI proposed {Function} for message \"{Message}\": args={Args}",
+            decision.FunctionName ?? "(none - text reply)",
+            request.Message,
             decision.IsFunctionCall ? JsonSerializer.Serialize(decision.Arguments) : decision.PlainTextReply);
 
         var response = decision.IsFunctionCall
