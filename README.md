@@ -7,14 +7,18 @@ executes it. The AI never touches the database directly.
 ## How to run
 
 1. Requires: .NET 8 SDK, SQL Server/LocalDB, a Gemini API key ([aistudio.google.com/apikey](https://aistudio.google.com/apikey)).
+
 2. Connection string is already set in `appsettings.json` for LocalDB — the app auto-creates the
    database and `dbo.Tasks` table on startup, no manual migration needed.
+
 3. Set your API key (don't put it in appsettings.json):
+
    ```bash
    cd TaskAssistant.Mvc
    dotnet user-secrets init
    dotnet user-secrets set "Gemini:ApiKey" "YOUR_KEY"
    ```
+
 4. Run it: `dotnet run`, then open the printed URL.
 
 ## AI provider
@@ -49,20 +53,61 @@ Teal is the execution spine — the only path that reaches `dbo.Tasks`. Amber is
 - **Delete confirmation** — `delete_task` never runs immediately; it returns
   `confirmation_required` first, and a second confirmed request (no AI round-trip) executes it.
 - **Audit logging** — every AI-proposed call, accepted or rejected, is logged server-side
-  (`ILogger`) and also shown live in the UI's sidebar audit log.
+  (`ILogger`, including the user's own message alongside the decision or failure reason) and also
+  shown live in the UI's sidebar audit log.
 
 ## Error handling (Section 5)
 
-| Case | What happens |
-|---|---|
-| Off-topic message | Gemini calls `reject_request(reason)` → `{status: "rejected"}` |
-| Task doesn't exist | `TaskNotFoundException` → `{status: "not_found"}`, HTTP 200 |
-| Ambiguous title match | 2+ matches → `{status: "ambiguous", candidates: [...]}`, never guesses |
-| Missing/invalid AI args | Backend re-validates independently of the AI → `{status: "invalid_arguments"}` |
-| AI times out / unavailable | Wrapped as `AiUnavailableException` → HTTP 503, friendly message |
-| SQL-injection-shaped input | Every query uses `SqlParameter` — value is always data, never SQL text |
+### 1. Off-topic message (small talk, unrelated questions)
 
-Any other unexpected exception is caught at the controller and returns `{status: "error"}` (HTTP 500) instead of crashing.
+- **What happens:** Gemini can only pick from the six catalog functions — anything unrelated to
+  tasks triggers `reject_request(reason)`, returned as `{status: "rejected"}` (HTTP 200).
+- **Why:** `toolConfig.functionCallingConfig.mode = "ANY"` forces a structured function call on
+  every request, so there is no path where the model just answers a question directly — off-topic
+  input is routed into a typed, harmless function instead of free text.
+
+### 2. Reference to a task that doesn't exist (`"mark task 999 as done"`)
+
+- **What happens:** `TaskService` looks the id up, finds nothing, and throws
+  `TaskNotFoundException`; the orchestrator catches it and returns `{status: "not_found"}` (HTTP 200).
+- **Why:** A missing row is an expected outcome, not a bug — surfacing it as structured data lets a
+  caller branch on `status` instead of parsing a stack trace or getting a 500.
+
+### 3. Ambiguous reference (two tasks contain "report", user says "delete the report task")
+
+- **What happens:** `SqlTaskRepository.FindByTitleAsync` returns every title match; two or more
+  throws `AmbiguousTaskReferenceException`, returned as `{status: "ambiguous", candidates: [...]}`
+  listing every match.
+- **Why:** Guessing which task the user meant risks acting on the wrong row, especially for a
+  delete — returning the candidates and asking is safer than a coin flip.
+
+### 4. AI proposes a call with missing or invalid arguments (no title for `create_task`)
+
+- **What happens:** The backend re-validates independently of Gemini's own schema:
+  `TaskService.CreateAsync` throws `TaskValidationException` on a blank title,
+  `ArgReader.TryGetDate` rejects an unparseable date. Both map to `{status: "invalid_arguments"}`.
+- **Why:** A schema marking a field "required" doesn't guarantee the model actually filled it in
+  correctly — the backend, not the AI, is the last line of validation.
+
+### 5. The AI API itself is unavailable or times out
+
+- **What happens:** `GeminiAiClient` wraps a missing API key, a failed HTTP call, a non-2xx
+  response, or a hard timeout as `AiUnavailableException`, with a plain-English reason per HTTP
+  status code (rate limit, overloaded, bad key, etc.). `AssistantController` returns
+  `{status: "error"}` at HTTP 503.
+- **Why:** A third-party outage shouldn't crash the endpoint or leak a raw exception to the client —
+  it becomes an explainable, retryable response instead.
+
+### 6. Argument values shaped like SQL injection (a quote or SQL keywords in a title)
+
+- **What happens:** Every `SqlTaskRepository` query uses `SqlParameter`
+  (`command.Parameters.Add("@Title", ...).Value = task.Title`), never string concatenation.
+- **Why:** Parameterization, not string-sanitizing, is what actually neutralizes this — a title
+  like `Robert'); DROP TABLE Tasks;--` is sent to SQL Server as a data value, so it is simply
+  stored as that literal text instead of being parsed as SQL.
+
+Any other unexpected exception is caught in `AssistantController` and returns `{status: "error"}`
+at HTTP 500 instead of crashing the process.
 
 ## Short answer questions
 
@@ -110,6 +155,7 @@ instead of just `ILogger`.
 ![Delete a non-existent task returns not_found](screenshots/Sample_error.png)
 
 Reproduce with curl:
+
 ```bash
 curl -X POST http://localhost:5299/api/assistant -H "Content-Type: application/json" \
   -d '{"message":"Mark task 999 as done"}'
